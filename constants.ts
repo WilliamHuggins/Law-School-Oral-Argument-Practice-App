@@ -1,11 +1,12 @@
 
+
 import { CaseCategory, Court, Settings } from './types';
 
 export const STANFORD_RED = '#8C1515';
 export const STANFORD_CHARCOAL = '#231F20';
 export const STANFORD_GREEN = '#175E54';
 
-export const JUDGE_VOICE_NAME = 'Charon';
+export const JUDGE_VOICE_NAME = 'Kore';
 
 export const COURT_RULE_PRESETS: Record<Court, {
   recommendedTimerMinutes: number;

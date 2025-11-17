@@ -14,7 +14,6 @@ const VAD_SILENCE_THRESHOLD = 0.01;
 const VAD_SILENCE_DURATION_MS = 1200;
 
 const getCourtProfileText = (court: Court): string => {
-    // ... (rest of the function is unchanged)
     switch (court) {
         case 'U.S. Supreme Court':
             return `You are a Justice on the United States Supreme Court hearing oral argument. Treat this as a high-stakes case of national importance. Ask pointed questions, use hypotheticals, and focus on doctrinal coherence and the broader consequences of the rule the student proposes. You may occasionally refer to “my colleagues” or “the Court.”`;
@@ -32,7 +31,7 @@ const getCourtProfileText = (court: Court): string => {
 
 const LiveSessionPage: React.FC = () => {
   const { settings, selectedCase, setTranscript, setFeedback, setPage, setIsGeneratingReport } = useAppContext();
-  const [sessionPhase, setSessionPhase] = useState<'Idle' | 'Connecting' | 'JudgeOpening' | 'ArgumentInProgress' | 'Ended'>('Idle');
+  const [sessionPhase, setSessionPhase] = useState<'Idle' | 'OpeningCeremony' | 'Connecting' | 'ArgumentInProgress' | 'Ended'>('Idle');
   const [sessionTranscript, setSessionTranscript] = useState<TranscriptEntry[]>([]);
   const [interimText, setInterimText] = useState({ student: '', judge: '' });
   const [timeLeft, setTimeLeft] = useState(settings.timerLength > 0 ? settings.timerLength * 60 : null);
@@ -49,11 +48,10 @@ const LiveSessionPage: React.FC = () => {
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const nextAudioStartTime = useRef(0);
   const ambientAudioRef = useRef<HTMLAudioElement | null>(null);
-  const transcriptContainerRef = useRef<HTMLDivElement>(null);
+  const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
   const currentInputTranscription = useRef('');
   const currentOutputTranscription = useRef('');
   const timerStartedRef = useRef(false);
-  const hasJudgeOpened = useRef(false);
   const isExpectingCoCounselHint = useRef(false);
   
   const isStudentSpeakingRef = useRef(false);
@@ -84,6 +82,30 @@ const LiveSessionPage: React.FC = () => {
     nextAudioStartTime.current = startTime + audioBuffer.duration;
   }, []);
   
+  const playStaticOpening = (): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!window.speechSynthesis) {
+        console.warn("speechSynthesis not available; skipping opening.");
+        resolve();
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(
+        "All rise. The Court is now in session. Please be seated. " +
+        "We are here today to hear argument in this matter. " +
+        "Counsel, you may begin when you are ready."
+      );
+      
+      setTimeout(() => {
+        utterance.onend = () => resolve();
+        utterance.onerror = (e) => {
+          console.error("SpeechSynthesis Error:", e);
+          resolve(); // Don't block on errors
+        };
+        window.speechSynthesis.speak(utterance);
+      }, 100);
+    });
+  };
+
   const endSession = useCallback(async (finalTranscript: TranscriptEntry[]) => {
     if (sessionPhase === 'Ended') return;
     setSessionPhase('Ended');
@@ -214,12 +236,14 @@ Your task:
 
     isExpectingCoCounselHint.current = true;
     try {
-      sessionRef.current.sendRealtimeInput({
-        clientContent: {
-          role: 'user',
-          parts: [{ text: hintPrompt }],
-        },
-      });
+      if (sessionRef.current) {
+        sessionRef.current.sendRealtimeInput({
+          clientContent: {
+            role: 'user',
+            parts: [{ text: hintPrompt }],
+          },
+        });
+      }
     } catch (error) {
       console.error("Error sending co-counsel hint request:", error);
       setSessionTranscript(prev => prev.slice(0, -1));
@@ -250,34 +274,37 @@ Your task:
   }, [timeLeft, isTimerActive, endSession, addTranscriptEntry]);
   
   const handleBeginArgument = useCallback(async () => {
-    setSessionPhase('Connecting');
-    setUiMessage('Initializing session...');
+    setSessionPhase('OpeningCeremony');
+    setUiMessage('Judge is opening the session...');
 
-    if (!API_KEY) {
-        setSessionPhase('Ended');
-        setUiMessage('Error: API_KEY is not configured.');
-        addTranscriptEntry({ speaker: 'System', text: 'Error: API_KEY is not configured. Cannot start session.' });
-        return;
-    }
-    
     try {
-        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-        outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        
-        const ai = new GoogleGenAI({ apiKey: API_KEY });
-        
-        const courtProfile = getCourtProfileText(settings.court);
-        const addressForm = COURT_RULE_PRESETS[settings.court].addressForm;
+      await playStaticOpening();
 
-        const systemInstruction = `You are an AI moot court judge. The student is arguing a case with the following summary: "${selectedCase?.summary}".
+      setSessionPhase('Connecting');
+      setUiMessage('Initializing session...');
+
+      if (!API_KEY) {
+          setSessionPhase('Ended');
+          setUiMessage('Error: API_KEY is not configured.');
+          addTranscriptEntry({ speaker: 'System', text: 'Error: API_KEY is not configured. Cannot start session.' });
+          return;
+      }
+    
+      mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      
+      const ai = new GoogleGenAI({ apiKey: API_KEY });
+      
+      const courtProfile = getCourtProfileText(settings.court);
+      const addressForm = COURT_RULE_PRESETS[settings.court].addressForm;
+
+      const systemInstruction = `You are an AI moot court judge. The student is arguing a case with the following summary: "${selectedCase?.summary}".
 Your persona should match the selected settings: Court: ${settings.court}, Difficulty: ${settings.difficulty}, Bench Style: ${settings.benchStyle}.
 
 COURT PROFILE:
 - ${courtProfile}
-
-At the very start of the session, when the app sends you an opening instruction, you must deliver the ceremonial opening even if the student has not spoken yet, then wait for their argument. Do not wait for the student to speak before opening court.
 
 Turn limit:
 - After each student answer, you may speak once as the Judge (one short turn of 1–2 sentences).
@@ -295,7 +322,7 @@ Grounding in the student’s actual words:
 - If the student’s last answer is very short, vague, or only contains greetings like “Good morning, Your Honor,” do not pretend they have made a substantive argument. Instead, ask them to present or clarify their argument.
 
 No scripted monologue:
-- Aside from the short ceremonial opening at the start of the session, you must not follow a preset script.
+- You must not follow a preset script.
 - Each question or comment must be based on the student’s most recent answer and the case summary, not on a generic list of questions.
 
 Style of questions:
@@ -317,7 +344,6 @@ Co-Counsel Role:
 - Keep each hint short: 1–3 sentences.
 - Never address the court (“Your Honor,” “May it please the Court”) while acting as Co-Counsel.`;
 
-        isAwaitingJudgeResponseRef.current = true; // Awaiting the opening statement
         const sessionPromise = ai.live.connect({
             model: 'gemini-2.5-flash-native-audio-preview-09-2025',
             config: {
@@ -331,16 +357,12 @@ Co-Counsel Role:
             },
             callbacks: {
                 onopen: () => {
-                    setSessionPhase('JudgeOpening');
-                    setUiMessage('Connected. The judge is opening the session...');
                     const source = audioContextRef.current!.createMediaStreamSource(mediaStreamRef.current!);
                     const processor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
                     scriptProcessorRef.current = processor;
 
                     processor.onaudioprocess = (e) => {
                         const inputData = e.inputBuffer.getChannelData(0);
-
-                        // VAD Logic
                         let sum = 0;
                         for (let i = 0; i < inputData.length; i++) {
                             sum += inputData[i] * inputData[i];
@@ -377,21 +399,21 @@ Co-Counsel Role:
                 },
                 onmessage: async (message: LiveServerMessage) => {
                     if (!message || !message.serverContent) return;
-
+                
                     const inputTranscriptionText = message.serverContent?.inputTranscription?.text;
                     if (inputTranscriptionText) {
                         currentInputTranscription.current += inputTranscriptionText;
                         setInterimText(prev => ({ ...prev, student: currentInputTranscription.current }));
                     }
-                    
-                    // --- Gated Judge Output Processing ---
-                    if (!isStudentSpeakingRef.current && isAwaitingJudgeResponseRef.current) {
+                
+                    // Process judge's response if we are waiting for it, even if student is speaking (interruption).
+                    if (isAwaitingJudgeResponseRef.current) {
                         const outputTranscriptionText = message.serverContent?.outputTranscription?.text;
                         if (outputTranscriptionText) {
                             currentOutputTranscription.current += outputTranscriptionText;
-                            setInterimText(prev => ({...prev, judge: currentOutputTranscription.current }));
+                            setInterimText(prev => ({ ...prev, judge: currentOutputTranscription.current }));
                         }
-
+                
                         const audioData = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
                         if (audioData && outputAudioContextRef.current) {
                             try {
@@ -402,42 +424,35 @@ Co-Counsel Role:
                             }
                         }
                     }
-
+                
                     if (message.serverContent?.turnComplete) {
                         const isCoCounselTurn = isExpectingCoCounselHint.current;
                         if (isCoCounselTurn) {
                             isExpectingCoCounselHint.current = false;
                             setIsHintLoading(false);
                         }
-                        
+                
                         const lastStudentText = currentInputTranscription.current.trim();
                         const lastJudgeText = currentOutputTranscription.current.trim();
-
-                        // Only commit judge text if it's a valid, awaited turn
-                        if (lastJudgeText && isAwaitingJudgeResponseRef.current) {
-                           const newEntry = { speaker: isCoCounselTurn ? 'Co-Counsel' : 'Judge', text: lastJudgeText };
-                           if (isCoCounselTurn) {
-                               setSessionTranscript(prev => [...prev.slice(0, -1), { ...newEntry, timestamp: new Date().toISOString() }]);
-                           } else {
-                               addTranscriptEntry(newEntry);
-                           }
-
-                           if (!hasJudgeOpened.current) {
-                                hasJudgeOpened.current = true;
-                                setSessionPhase('ArgumentInProgress');
-                                setUiMessage('You may begin your argument. Your microphone is live.');
-                                if (settings.timerLength > 0 && !timerStartedRef.current) {
-                                    setIsTimerActive(true);
-                                    timerStartedRef.current = true;
+                
+                        // The judge's turn we were waiting for has now completed.
+                        if (isAwaitingJudgeResponseRef.current) {
+                            if (lastJudgeText) {
+                                const newEntry = { speaker: isCoCounselTurn ? 'Co-Counsel' : 'Judge', text: lastJudgeText };
+                                if (isCoCounselTurn) {
+                                    setSessionTranscript(prev => [...prev.slice(0, -1), { ...newEntry, timestamp: new Date().toISOString() }]);
+                                } else {
+                                    addTranscriptEntry(newEntry);
                                 }
-                           }
-                           isAwaitingJudgeResponseRef.current = false; // Judge's turn is over, wait for student
+                            }
+                            // Always reset the flag now that the turn is complete, preventing deadlocks.
+                            isAwaitingJudgeResponseRef.current = false;
                         }
-
+                
                         if (lastStudentText) {
-                           pendingStudentTurnRef.current = lastStudentText;
+                            pendingStudentTurnRef.current = lastStudentText;
                         }
-                        
+                
                         currentInputTranscription.current = '';
                         currentOutputTranscription.current = '';
                         setInterimText({ student: '', judge: '' });
@@ -458,17 +473,6 @@ Co-Counsel Role:
         });
         sessionRef.current = await sessionPromise;
 
-        const openingPrompt = `You are the presiding Judge. Deliver a short ceremonial opening and then invite counsel to begin.
-Speak in 2–3 short sentences, along these lines:
-"All rise. The Court is now in session. Please be seated. We are here today to hear argument in this matter. Counsel, you may begin when you are ready."
-After this, stop and wait for the student's argument.`;
-        sessionRef.current.sendRealtimeInput({
-            clientContent: {
-                role: 'user',
-                parts: [{ text: openingPrompt }]
-            }
-        });
-
         if (settings.courtroomSounds) {
             const AMBIENT_AUDIO_URL = "https://raw.githubusercontent.com/WilliamHuggins/WilliamHuggins/main/Imagine_you%E2%80%99re_sitti_%234-1763398352319.mp3";
             ambientAudioRef.current = new Audio(AMBIENT_AUDIO_URL); 
@@ -481,13 +485,20 @@ After this, stop and wait for the student's argument.`;
             });
         }
 
+        setSessionPhase('ArgumentInProgress');
+        setUiMessage('You may begin your argument. Your microphone is live.');
+        if (settings.timerLength > 0 && !timerStartedRef.current) {
+            setIsTimerActive(true);
+            timerStartedRef.current = true;
+        }
+
       } catch (err) {
         console.error("Setup failed:", err);
         setSessionPhase('Ended');
         setUiMessage('Failed to initialize microphone or audio session.');
         addTranscriptEntry({ speaker: 'System', text: 'Failed to initialize microphone or audio session.' });
       }
-    }, [API_KEY, settings, selectedCase, addTranscriptEntry, playAudioBuffer]);
+    }, [API_KEY, settings, selectedCase, addTranscriptEntry, playAudioBuffer, endSession]);
     
     useEffect(() => {
         if (sessionPhase !== 'ArgumentInProgress') return;
@@ -528,12 +539,14 @@ Do not speak as co-counsel.`;
 
                     const sendPrompt = () => {
                          try {
-                            sessionRef.current.sendRealtimeInput({
-                                clientContent: {
-                                    role: 'user',
-                                    parts: [{ text: judgePrompt }]
-                                }
-                            });
+                            if (sessionRef.current) {
+                                sessionRef.current.sendRealtimeInput({
+                                    clientContent: {
+                                        role: 'user',
+                                        parts: [{ text: judgePrompt }]
+                                    }
+                                });
+                            }
                         } catch (error) {
                             console.error("Error sending reactive judge prompt:", error);
                             addTranscriptEntry({ speaker: 'System', text: 'An error occurred while prompting the judge.' });
