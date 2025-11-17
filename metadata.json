@@ -1,0 +1,7 @@
+{
+  "name": "Stanford Law School Oral Argument Coach",
+  "description": "A moot court practice platform for law students, providing a realistic oral argument simulation with AI judges and optional AI co-counsel. The experience is immersive (voice-based) and educational, helping students sharpen their advocacy skills.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
