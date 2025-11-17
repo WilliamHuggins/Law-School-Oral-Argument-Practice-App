@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef } from 'react';
 import { useAppContext } from '../App';
 import { Page } from '../types';
@@ -8,7 +9,6 @@ const FeedbackPage: React.FC = () => {
   const { settings, selectedCase, transcript, feedback, resetApp, setPage } = useAppContext();
   const reportRef = useRef<HTMLDivElement>(null);
 
-  // FIX: Add console log to debug transcript content on page load.
   useEffect(() => {
     console.log("Report page received transcript:", transcript);
   }, [transcript]);
@@ -64,6 +64,15 @@ const FeedbackPage: React.FC = () => {
     doc.setFont('helvetica', 'normal');
     doc.text(`Session Report: ${new Date().toLocaleString()}`, pageWidth / 2, y, { align: 'center' });
     y += 40;
+    
+    // Session Settings
+    addSectionHeader('Session Settings');
+    addBodyText(
+      `Court: ${settings.court}\n` +
+      `Time Limit: ${settings.timerLength > 0 ? `${settings.timerLength} minutes` : 'No Timer'}\n` +
+      `Bench Style: ${settings.benchStyle}\n` +
+      `Difficulty: ${settings.difficulty}`
+    );
 
     // Case Summary
     addSectionHeader(`Case Summary: ${selectedCase?.title}`);
@@ -98,7 +107,6 @@ const FeedbackPage: React.FC = () => {
   };
 
   const startNewSession = () => {
-    // Keep settings, go back to case selection
     setPage(Page.CaseSelection);
   }
 
@@ -113,6 +121,16 @@ const FeedbackPage: React.FC = () => {
         <h3 className="text-2xl font-serif font-bold border-b pb-2 mb-4 text-stanford-red">Practice Report</h3>
         <p className="text-sm text-gray-500 mb-6">Session Date: {new Date().toLocaleString()}</p>
         
+         <div className="mb-8">
+            <h4 className="text-xl font-serif font-semibold mb-2">Session Settings</h4>
+            <div className="p-4 bg-gray-50 rounded-md text-sm text-gray-700 grid grid-cols-2 gap-4">
+                <p><strong>Court:</strong> {settings.court}</p>
+                <p><strong>Time Limit:</strong> {settings.timerLength > 0 ? `${settings.timerLength} minutes` : 'No Timer'}</p>
+                <p><strong>Bench Style:</strong> {settings.benchStyle}</p>
+                <p><strong>Difficulty:</strong> {settings.difficulty}</p>
+            </div>
+        </div>
+
         <div className="mb-8">
             <h4 className="text-xl font-serif font-semibold mb-2">Case Summary: {selectedCase?.title}</h4>
             <div className="p-4 bg-gray-50 rounded-md text-sm text-gray-700 whitespace-pre-wrap">
@@ -130,7 +148,6 @@ const FeedbackPage: React.FC = () => {
         <div>
             <h4 className="text-xl font-serif font-semibold mb-2">Full Transcript</h4>
             <div className="p-4 bg-gray-50 rounded-md max-h-96 overflow-y-auto text-sm space-y-3">
-                {/* FIX: Render the actual transcript with timestamps, or the placeholder message if empty. */}
                 {transcript.length > 0 ? transcript.map((entry, index) => (
                     <div key={index} className="flex items-start">
                         <span className="font-bold w-24 flex-shrink-0">{entry.speaker}: </span>

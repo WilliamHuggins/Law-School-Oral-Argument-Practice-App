@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../App';
-import { Page, Settings } from '../types';
+import { Page, Settings, Court } from '../types';
 import { InfoIcon } from './icons';
+import { COURT_RULE_PRESETS } from '../constants';
 
 const ToggleSwitch: React.FC<{ checked: boolean; onChange: (checked: boolean) => void }> = ({ checked, onChange }) => (
     <label className="relative inline-flex items-center cursor-pointer">
@@ -18,12 +19,24 @@ const SettingsPage: React.FC = () => {
   const handleSettingChange = <K extends keyof Settings,>(key: K, value: Settings[K]) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }));
   };
+
+  // When court changes, update the recommended timer and bench style
+  useEffect(() => {
+    const preset = COURT_RULE_PRESETS[localSettings.court];
+    setLocalSettings(prev => ({
+      ...prev,
+      timerLength: preset.recommendedTimerMinutes,
+      benchStyle: preset.recommendedBenchStyle,
+    }));
+  }, [localSettings.court]);
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSettings(localSettings);
     setPage(Page.CaseSelection);
   };
+
+  const selectedCourtPreset = COURT_RULE_PRESETS[localSettings.court];
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -35,6 +48,18 @@ const SettingsPage: React.FC = () => {
                 <h3 className="text-xl font-bold font-serif mb-4 border-b pb-2">Session Parameters</h3>
                 <div className="space-y-6">
                     <div>
+                        <label htmlFor="court" className="block text-sm font-medium text-gray-700 mb-1">Court & Rules</label>
+                        <select id="court" value={localSettings.court} onChange={(e) => handleSettingChange('court', e.target.value as Court)} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-stanford-red focus:border-stanford-red">
+                            {Object.keys(COURT_RULE_PRESETS).map(courtName => (
+                                <option key={courtName} value={courtName}>{courtName}</option>
+                            ))}
+                        </select>
+                         <div className="mt-2 p-3 bg-gray-50 rounded-md border text-xs text-gray-600">
+                            <p className="font-semibold">{selectedCourtPreset.description}</p>
+                            <p className="mt-1">Recommended: {selectedCourtPreset.recommendedTimerMinutes} min timer, {selectedCourtPreset.recommendedBenchStyle} Bench. Addressed as "{selectedCourtPreset.addressForm}".</p>
+                        </div>
+                    </div>
+                    <div>
                         <label htmlFor="timerLength" className="block text-sm font-medium text-gray-700 mb-1">Oral Argument Time Limit</label>
                         <select id="timerLength" value={localSettings.timerLength} onChange={(e) => handleSettingChange('timerLength', parseInt(e.target.value))} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-stanford-red focus:border-stanford-red">
                             <option value="0">No Timer</option>
@@ -42,14 +67,6 @@ const SettingsPage: React.FC = () => {
                             <option value="10">10 minutes</option>
                             <option value="15">15 minutes</option>
                             <option value="20">20 minutes</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label htmlFor="difficulty" className="block text-sm font-medium text-gray-700 mb-1">Difficulty (Law School Year)</label>
-                        <select id="difficulty" value={localSettings.difficulty} onChange={(e) => handleSettingChange('difficulty', e.target.value as Settings['difficulty'])} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-stanford-red focus:border-stanford-red">
-                            <option value="1L">1L</option>
-                            <option value="2L">2L</option>
-                            <option value="3L/LLM">3L/LLM</option>
                         </select>
                     </div>
                     <div>
@@ -65,6 +82,14 @@ const SettingsPage: React.FC = () => {
                             </div>
                         </div>
                     </div>
+                     <div>
+                        <label htmlFor="difficulty" className="block text-sm font-medium text-gray-700 mb-1">Difficulty (Law School Year)</label>
+                        <select id="difficulty" value={localSettings.difficulty} onChange={(e) => handleSettingChange('difficulty', e.target.value as Settings['difficulty'])} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-stanford-red focus:border-stanford-red">
+                            <option value="1L">1L</option>
+                            <option value="2L">2L</option>
+                            <option value="3L/LLM">3L/LLM</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -72,19 +97,6 @@ const SettingsPage: React.FC = () => {
             <div className="bg-white p-6 rounded-lg shadow-md">
                 <h3 className="text-xl font-bold font-serif mb-4 border-b pb-2">Environment & Aids</h3>
                 <div className="space-y-6">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">AI Voice Type</label>
-                        <div className="flex space-x-4">
-                            <label className="flex items-center">
-                                <input type="radio" name="voiceType" value="Male" checked={localSettings.voiceType === 'Male'} onChange={() => handleSettingChange('voiceType', 'Male')} className="focus:ring-stanford-red h-4 w-4 text-stanford-red border-gray-300"/>
-                                <span className="ml-2">Male</span>
-                            </label>
-                            <label className="flex items-center">
-                                <input type="radio" name="voiceType" value="Female" checked={localSettings.voiceType === 'Female'} onChange={() => handleSettingChange('voiceType', 'Female')} className="focus:ring-stanford-red h-4 w-4 text-stanford-red border-gray-300"/>
-                                <span className="ml-2">Female</span>
-                            </label>
-                        </div>
-                    </div>
                      <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-gray-700">Courtroom Ambient Sound</span>
                         <ToggleSwitch checked={localSettings.courtroomSounds} onChange={(checked) => handleSettingChange('courtroomSounds', checked)} />
@@ -92,6 +104,9 @@ const SettingsPage: React.FC = () => {
                     <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-gray-700">Co-Counsel Hints</span>
                          <ToggleSwitch checked={localSettings.coCounsel} onChange={(checked) => handleSettingChange('coCounsel', checked)} />
+                    </div>
+                    <div className="text-sm text-gray-500 p-4 bg-gray-50 rounded-md">
+                        <p>The judge will have a standard female voice. This cannot be changed.</p>
                     </div>
                 </div>
             </div>

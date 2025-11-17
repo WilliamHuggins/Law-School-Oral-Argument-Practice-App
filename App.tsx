@@ -30,9 +30,9 @@ const defaultSettings: Settings = {
   timerLength: 10,
   difficulty: '1L',
   benchStyle: 'Standard',
-  voiceType: 'Female', // Default to Female
   courtroomSounds: false,
   coCounsel: false,
+  court: 'Generic Appellate Court',
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
